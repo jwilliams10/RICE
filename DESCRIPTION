@@ -6,8 +6,10 @@ Author: Jacob Williams [aut, cre]
 Maintainer: Jacob Williams <jacob.williams@nih.gov>
 Description: Creates a rare variant polygenic risk score using burden scores extracted from a ADGS file. Burden scores are extracted for specific rare variant sets using the Burden_Score function. A rare variant PRS is constructed using the RareVariantPRS function.
 License: GPL-3
-Imports: Rcpp, SCANG, dplyr, SeqArray, SeqVarTools, GenomicFeatures, TxDb.Hsapiens.UCSC.hg38.knownGene, GMMAT, GENESIS, Matrix, methods
+Imports: Rcpp, SCANG, dplyr, SeqArray, SeqVarTools, GenomicFeatures, TxDb.Hsapiens.UCSC.hg38.knownGene, GMMAT, GENESIS, Matrix, methods, caret, glmnet, SuperLearner, STAAR, STAARpipeline
 Encoding: UTF-8
 LazyData: true
-Depends: R (>= 4.0)
+Depends: R (>= 4.0.0)
 RoxygenNote: 7.3.2
+Suggests: knitr, rmarkdown
+VignetteBuilder: knitr
