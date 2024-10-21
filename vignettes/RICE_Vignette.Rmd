@@ -1,0 +1,356 @@
+---
+title: "RICE"
+author: "Jacob WIlliams"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{RICE}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+knitr::opts_knit$set(root.dir = "/Users/williamsjacr/Desktop/RareVariantPRS_Results/Tutorial_Data/")
+```
+
+```{r,message=FALSE,warning=FALSE}
+## Load Relevant Packages
+library(gdsfmt)
+library(SeqArray)
+library(SeqVarTools)
+library(dplyr)
+library(STAAR)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(Matrix)
+library(SCANG)
+library(STAARpipeline)
+library(glmnet)
+library(caret)
+library(SuperLearner)
+library(RICE)
+```
+
+RICE performs risk prediction for complex traits and diseases by incorporating both common (RICE-CV) and rare variants (RICE-RV). RICE framework consists of three main steps: (1) RICE-CV combines multiple existing common variant PRSs using ensemble learning to generate a single robust PRS; (2) RICE-RV identifies significant rare variants sets conditioned on RICE-CV, models them using statistical methods, and combines the results through ensemble learning to produce a rare variant PRS; (3) The PRS from RICE-CV and RICE-RV are then evaluated together in a regression model, adjusting for covariates. RICE requires three independent datasets: (1) a training dataset to generate GWAS summary statistics, rare variant association p-values, and train model for both common and rare variant models; (2) a tuning dataset to optimize model parameters and train the ensemble learning step; (3) a validation dataset to assess the final prediction performance.
+
+This vignette illustrates an example of constructing a rare variant PRS using chromosome 22 of 1000 Genomes data and provides details on the SuperLearner ensemble regression algorithm used in both RICE-RV and RICE-CV. Data included in this vignette is located at https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/Y7AXYA and can be either directly downloaded from this link or using wget.
+
+# RICE-RV
+
+RICE-RV performs rare variant association analysis to identify significant rare variant sets using the training dataset with STAARpipeline. With these significant rare variant sets, burden scores are constructed for each set. Then penalized regression models are trained using the burden scores and predicted onto the tuning and validation datasets. Ensemble regression using SuperLearner optimizes the predictions to form a single PRS. Lastly, this PRS is projected onto the validation set to assess the final prediction performance.
+
+The first step of RICE-RV involves STAARpipeline. RICE-RV can be seen as an extension of the STAARpipeline, as it relies on the results of STAARpipeline and operates with identical data structure. Therefore, before attempting to implement RICE-RV, we suggest reading through the STAARpipeline tutorial (https://github.com/xihaoli/STAARpipeline-Tutorial). This vignette will only provide brief summaries of conducting rare variant analysis with STAARpipeline.
+
+## aGDS Files
+
+The first step of both RICE-RV is creating annotated genomic data structure files (aGDS) for each chromosome. In the manuscript, aGDS files included the train, tune, and validation sets, as we can extract each set by subsetting. These are highly compressed files that include all variants and the functional annotations of each variant. These are commonly created using VCF files. Full details of creating aGDS files can be found in the STAARpipeline tutorial (https://github.com/xihaoli/STAARpipeline-Tutorial?tab=readme-ov-file#generate-genomic-data-structure-gds-file).
+
+## Baseline Model
+
+The second step of both RICE-RV is creating a baseline null model to conduct rare variant association analysis with the training dataset. RICE-RV is conducted after RICE-CV therefore the baseline model for rare variant association analysis includes the common variant PRS from RICE-CV. In the manuscript, RICE-CV was constructed with CT, LDpred2, and Lassosum2 in the case of the training dataset consisting of a single ancestry and CT-SLEB, PROSPER, and JointPRS in the case of the training dataset consisting of multiple ancestries. Full details on the implementation of this can be found at ... and https://github.com/jwilliams10/RareVariantPRS. However, in practice RICE-RV can be constructed conditional on any common variant PRS. Therefore, here we fit the baseline model with a simulated common variant PRS.
+
+```{r,message=FALSE}
+## Create Train/Tune/Validation Partitions
+set.seed(1330)
+
+### Get Sample IDs
+genofile <- seqOpen("Chr22_1000G.gds")
+sampleids <- seqGetData(genofile,"sample.id")
+seqClose(genofile)
+
+### 70% Train, 15% Tune, 15% Validation
+train_set <- sample(sampleids,round(length(sampleids)*0.7))
+remaining_set <- sampleids[!(sampleids %in% train_set)]
+tune_set <- sample(remaining_set,round(length(remaining_set)*0.5))
+validation_set <- sampleids[!(sampleids %in% c(train_set,tune_set))]
+
+## Fit Baseline Model for Training Data
+### Load Phenotype and Common Variant PRS
+load("Phenotype.RData")
+load("Common_Variant_PRS.RData")
+
+### Merge Phenotype and Common Variant PRS
+Phenotype_Data <- inner_join(Y,Common_Variant_PRS)
+### Subset to the Training Set
+Phenotype_Data_Train <- Phenotype_Data[Phenotype_Data$IDs %in% train_set,]
+
+### Fit Null Model without kinship, specifying continuous outcome, and column name of ID column
+Null_Model <- fit_nullmodel(Y~PRS, data = Phenotype_Data_Train,id = "IDs",kins = NULL,family = gaussian(link = "identity"))
+```
+
+## Rare Variant Association Study
+
+The third step of RICE-RV is to perform rare variant association analysis using STAARpipeline. Rare variant association analysis within STAARpipeline can be divided into two analyses; gene-centric coding analysis and gene-centric noncoding analysis. Gene-centric coding analysis conducts association analysis with rare variants located in protein-coding genes in the coding region and gene-centric noncoding analysis in the noncoding region. Whole exome sequencing data is largely comprised of rare variants located in the coding region while whole genome sequencing data has rare variants in both the coding and noncoding regions. This vignette only provides details for an example gene-centric coding analysis. Full details on how to implement gene-centric noncoding analysis and implementing both coding and noncoding analysis within a HPC is available at https://github.com/xihaoli/STAARpipeline-Tutorial?tab=readme-ov-file#step-31-gene-centric-coding-analysis. 
+
+Here we implement gene-centric coding analysis on the training dataset for a subset of chromosome 22. We implement for only a subset as this is a non-optimal way of implementing this and takes a while to run, if you have access to a HPC or cloud computing we recommend submitting this as a batch job as shown in the STAARpipeline tutorial. 
+
+```{r,warning=FALSE,message=FALSE,results='hide'}
+### Gene-Centric Coding Analysis
+
+## QC_label
+QC_label <- "annotation/info/QC_label"
+## variant_type
+variant_type <- "SNV"
+## geno_missing_imputation
+geno_missing_imputation <- "mean"
+## Annotation_dir
+Annotation_dir <- "annotation/info/FunctionalAnnotation"
+## Annotation channel
+Annotation_name_catalog <- read.csv("Annotation_name_catalog.csv")
+## Use_annotation_weights
+Use_annotation_weights <- TRUE
+## Annotation name
+Annotation_name <- c("CADD","LINSIGHT","FATHMM.XF","aPC.EpigeneticActive","aPC.EpigeneticRepressed","aPC.EpigeneticTranscription",
+                     "aPC.Conservation","aPC.LocalDiversity","aPC.Mappability","aPC.TF","aPC.Protein")
+## Protein-Coding Genes in Chromosome 22
+genes_info_chr <- genes_info[genes_info[,2]==22,]
+
+Genes <- c("OR11H1","POTEH","CCT8L2","XKR3","GAB4","IL17RA","RANBP1","PI4KA","SERPIND1","ZNF280B","GGTLC2","PIK3IP1")
+genes_info_chr_subset <- genes_info_chr[genes_info_chr$hgnc_symbol %in% Genes,]
+
+### Gene-Centric Coding Analysis
+genofile <- seqOpen("Chr22_1000G.gds")
+
+results_coding <- c()
+
+for(kk in 1:nrow(genes_info_chr_subset)){
+  print(kk)
+  gene_name <- genes_info_chr_subset[kk,1]
+  results <- Gene_Centric_Coding(chr=22,gene_name=gene_name,genofile=genofile,obj_nullmodel=Null_Model,
+                                 rare_maf_cutoff=0.01,rv_num_cutoff=2,
+                                 QC_label=QC_label,variant_type=variant_type,geno_missing_imputation=geno_missing_imputation,
+                                 Annotation_dir=Annotation_dir,Annotation_name_catalog=Annotation_name_catalog,
+                                 Use_annotation_weights=Use_annotation_weights,Annotation_name=Annotation_name,silent = TRUE)
+  
+  results_coding <- append(results_coding,results)
+}
+seqClose(genofile)
+```
+
+## Burden Scores
+
+The fourth step of is extracting the burden scores of the significant rare variant sets. In our manuscript, significance is defined as having the STAAR-Burden p-value less than $10^{-3}$, however, an individual can construct burden scores for any set of rare variant sets. To identify significant rare variant sets, we first compile the results from the gene-centric coding analysis.
+
+```{r}
+### Compile Gene-Centric Coding Analysis
+coding_sig <- NULL
+for(j in 1:length(results_coding)){
+  coding_sig <- rbind(coding_sig,unlist(results_coding[[j]][,c(1:4,61)]))
+}
+coding_sig <- as.data.frame(coding_sig)
+colnames(coding_sig) <- c("Gene","Chr","Category","Number_SNV","STAARB")
+coding_sig$Chr <- as.numeric(coding_sig$Chr) 
+coding_sig$Number_SNV <- as.numeric(coding_sig$Number_SNV) 
+coding_sig$STAARB <- as.numeric(coding_sig$STAARB) 
+coding_sig <- coding_sig[coding_sig$Number_SNV < 2000,]
+```
+
+Again this code is written for this vignette, when using a HPC or cloud computing refer to the STAARpipeline tutorial to optimally compile the results. Once compiled the structure of the results should look like this:
+
+```{r}
+### Head of Significant Rare Variant Set Results
+coding_sig <- coding_sig[coding_sig$STAARB < 1e-3,]
+head(coding_sig)
+```
+
+Note, the results include the protein-coding gene, the chromosome, and the functional category. These are essential elements to define a rare variant set to build and extract a burden score. Below is how to compute the burden scores for all significant rare variant sets for all individuals. Burden scores are independent across individuals, therefore they can be computed for all individuals then separated into train, tune, and validation sets. Further note, that the STAAR-Burden(1,1) p-value is the only p-value, this is because this the p-value used to determine significance in the manuscript. However, the raw output of the rare variant association analysis includes much more information outlined in the STAARpipeline tutorial. With the significant rare variant sets, we can extract and build the burden scores of the significant rare variant sets.
+
+```{r,message=FALSE,results='hide'}
+### Significant Rare Variant Set's Burden Scores
+genofile <- seqOpen("Chr22_1000G.gds")
+Sig_Burdens <- NULL
+### Loop over significant rare variant sets
+### Using IDs = sampleids to build burden scores for all individuals.
+for(i in 1:nrow(coding_sig)){
+  chr <- coding_sig$Chr[i]
+  gene_name <- coding_sig$Gene[i]
+  category <- coding_sig$Category[i]
+  a <- Burden_Scores(region = "Coding",chr = chr, gene_name = gene_name,category = category,
+              genofile = genofile,IDs = sampleids,rare_maf_cutoff=0.01,rv_num_cutoff=2,
+              QC_label=QC_label,variant_type=variant_type,geno_missing_imputation=geno_missing_imputation,
+              Annotation_dir=Annotation_dir,Annotation_name_catalog=Annotation_name_catalog,silent = TRUE) 
+ ### Combine them column-wise
+  Sig_Burdens <- cbind(Sig_Burdens,a)
+}
+seqClose(genofile)
+
+### The burden scores align with the order of the sampleids
+IDs_Sig_Burdens <- sampleids
+```
+
+## Penalized Regression
+
+The fifth step of RICE-RV trains penalized regression models with the trait as the outcome and the significant burden scores as an input. Once these are trained, we predict the outcome for the tuning and validation. Note we do not choose optimal hyper-parameters for the penalized regression models, we simply use the entire sequence of hyper-parameters.
+
+```{r}
+## Penalized Regression
+
+### Align with phenotype data
+X <- data.frame(IDs = IDs_Sig_Burdens,Sig_Burdens)
+Phenotype_Data <- inner_join(Phenotype_Data,X)
+### Extract Aligned Burdens, change structure
+X_Aligned <- as.matrix(Phenotype_Data[,paste0("X",1:ncol(Sig_Burdens))])
+
+### Subset the Burden Scores to Train, Tune, Validation
+X_train <- X_Aligned[Phenotype_Data$IDs %in% train_set,]
+X_tune <- X_Aligned[Phenotype_Data$IDs %in% tune_set,]
+X_valid <- X_Aligned[Phenotype_Data$IDs %in% validation_set,]
+
+### Build a null model using control covariates to train penalized regression models
+train_null_model <- lm(Y~1,data = Phenotype_Data[Phenotype_Data$IDs %in% train_set,])
+### Extract residuals to use as a response
+Residuals_Train <- train_null_model$residuals
+
+### Train penalized regression models on the training set
+lasso_train <- glmnet(X_train,Residuals_Train,family = "gaussian",alpha = 1)
+ridge_train <- glmnet(X_train,Residuals_Train,family = "gaussian",alpha = 0)
+
+### Project onto tuning and validation sets
+lasso_tune <- predict(lasso_train,as.matrix(X_tune))
+ridge_tune <- predict(ridge_train,X_tune)
+lasso_valid <- predict(lasso_train,X_valid)
+ridge_valid <- predict(ridge_train,X_valid)
+
+### Combine
+all_tune <- cbind(lasso_tune,ridge_tune)
+colnames(all_tune) <- c(paste0("lasso",1:ncol(lasso_tune)),paste0("ridge",1:ncol(ridge_tune)))
+all_valid <- cbind(lasso_valid,ridge_valid)
+colnames(all_valid) <- c(paste0("lasso",1:ncol(lasso_valid)),paste0("ridge",1:ncol(ridge_valid)))
+```
+
+## SuperLearner
+
+The sixth and last step of RICE-RV, trains ensemble regression SuperLearner algorithm on the predicted penalized regression outcomes with the tuning dataset. The ensemble regression method used in RICE is not simply the SuperLearner model, but an augmented algorithm of our own design. The augmented ensemble regression uses SuperLearner to train an ensemble regression algorithm which ensembles Lasso and ridge regression algorithms. The performance of SuperLearner is compared against the performance of the Lasso and ridge regression trained in SuperLearner. The best performing prediction from the augmented SuperLearner based on $R^2$ on the tuning data is then compared to the prediction performance of the original penalized regression outputs. Lastly, the best predictor on the tuning data is the final rare variant PRS.
+
+```{r,warning=FALSE,message=FALSE}
+## SuperLearner
+### Build a null model using control covariates to train the SuperLearner
+tune_null_model <- lm(Y~1,data = Phenotype_Data[Phenotype_Data$IDs %in% tune_set,])
+y_tune <- tune_null_model$residuals
+
+### Compute the R2 of the penalized regression inputs
+best_r2 <- vector()
+count <- 1
+for(j in colnames(all_tune)){
+  tmp <- data.frame(y = y_tune,x = all_tune[,j])
+  best_r2[count] <- summary(lm(y~x,data = tmp))$r.squared
+  count <- count + 1
+}
+
+### Store the best
+best_singleprs <- colnames(all_tune)[which.max(best_r2)]
+r2_best_singleprs_tune <- best_r2[which.max(best_r2)]
+
+### Clean the projections
+mtx <- cor(all_tune)
+drop <- names(as.data.frame(all_tune))[apply(mtx,2,function(x){sum(is.na(x))}) == (nrow(mtx) - 1)]
+  
+all_tune <- all_tune[,!(colnames(all_tune) %in% drop)]
+all_valid <- all_valid[,!(colnames(all_valid) %in% drop)]
+
+drop <- findLinearCombos(all_tune)$remove
+drop <- names(as.data.frame(all_tune))[drop]
+
+all_tune <- all_tune[,!(colnames(all_tune) %in% drop)]
+all_valid <- all_valid[,!(colnames(all_valid) %in% drop)]
+
+mtx <- cor(all_tune)
+drop <- findCorrelation(mtx,cutoff=0.98)
+drop <- names(as.data.frame(all_tune))[drop]
+  
+all_tune <- all_tune[,!(colnames(all_tune) %in% drop)]
+all_valid <- all_valid[,!(colnames(all_valid) %in% drop)]
+
+### SuperLearner in RICE is an ensemble of Lasso and ridge regression models as we want to maintain linearity
+SL.library <- c("SL.glmnet","SL.ridge")
+  
+full_superlearner <- SuperLearner(Y = y_tune, X = as.data.frame(all_tune), family = gaussian(),
+                                    SL.library = SL.library,cvControl = list(V = 20))
+### Perform cross validation of SuperLearner on the tuning dataset to see whether Lasso, Ridge, or SuperLearner performs best 
+cvsl <- CV.SuperLearner(Y = y_tune, X = as.data.frame(all_tune), family = gaussian(),
+                          SL.library = SL.library,cvControl = list(V = 20))
+
+best_algorithm <- summary(cvsl)$Table$Algorithm[which.min(summary(cvsl)$Table$Ave)]
+  
+### Predict all outcomes
+RareVariantPRS_Tune <- predict(full_superlearner, as.data.frame(all_tune), onlySL = FALSE)
+RareVariantPRS_Valid <- predict(full_superlearner, all_valid, onlySL = FALSE)
+
+prs_best_tune_sl <- RareVariantPRS_Tune$pred
+prs_best_tune_glmnet <- RareVariantPRS_Tune$library.predict[,1]
+prs_best_tune_ridge <- RareVariantPRS_Tune$library.predict[,2]
+
+prs_best_valid_sl <- RareVariantPRS_Valid$pred
+prs_best_valid_glmnet <- RareVariantPRS_Valid$library.predict[,1]
+prs_best_valid_ridge <- RareVariantPRS_Valid$library.predict[,2]
+
+### Choose best prediction from ensemble regression
+if(best_algorithm == "SL.glmnet_All"){
+    prs_best_tune <- prs_best_tune_glmnet
+    prs_best_valid <- prs_best_valid_glmnet
+}else if(best_algorithm == "SL.ridge_All"){
+    prs_best_tune <- prs_best_tune_ridge
+    prs_best_valid <- prs_best_valid_ridge
+}else {
+    prs_best_tune <- prs_best_tune_sl
+    prs_best_valid <- prs_best_valid_sl
+}
+
+### Compute the R2 of the best ensemble regression prediction
+r2_sl_tune <- summary(lm(y~x,data = data.frame(y = y_tune,x = prs_best_tune)))$r.squared
+
+### Compare to the best individual input R2, keep the best
+if(r2_sl_tune < r2_best_singleprs_tune){
+  prs_best_tune <- all_tune[,best_thresh]
+  prs_best_valid <- all_valid[,best_thresh]
+}
+
+### Save final PRS for tuning and validation sets
+BestRareVariantPRS_Tune <- data.frame(IDs = tune_set,PRS = prs_best_tune)
+BestRareVariantPRS_Valid <- data.frame(IDs = validation_set,PRS = prs_best_valid)
+```
+
+This ensemble regression algorithm is the exact same one used in RICE-CV but the input is instead all of the PRSs from existing methods.
+
+## Evaluation
+
+We can evaluate the final prediction performance on the validation dataset.
+
+```{r}
+valid_null_model <- lm(Y~1,data = Phenotype_Data[Phenotype_Data$IDs %in% validation_set,])
+y_valid <- valid_null_model$residuals
+
+### R2 of RICE-RV on Validation Data
+summary(lm(y~x,data = data.frame(y= y_valid,x = prs_best_valid)))$r.squared
+
+### Beta of PRS per SD of RICE-RV on Validation Data
+coef(lm(y~x - 1,data = data.frame(y=scale(y_valid),x = scale(prs_best_valid))))
+```
+
+## Extract Final Coefficients of Rare Variant Sets
+
+Commonly, there is curiosity in knowing the relationship between the variants and the final PRS. As all of the ensemble learning is done using linear algorithms, the final predicted PRS is then a linear projection of the significant burden scores. Using the tuning dataset, we can estimate the final coefficients of the significant rare variant sets with the following code.
+
+```{r}
+## Estimate Final Coefficients
+Linear_Projection <- data.frame(y = prs_best_tune,X_tune)
+### The tuning PRS is a perfect linear projection of the significant burden scores
+summary(lm(y~.,data =Linear_Projection))$r.squared
+### Extract the coefficients
+coding_sig$Final_Coefficients <- unname(coef(lm(y~.,data = Linear_Projection))[-1])
+head(coding_sig)
+```
+
+## Extensions
+
+Here we presented how to construct a rare variant PRS using rare variants located in coding region of chromosome 22. This example is almost identical to the simulation study in our manuscript but is far from the complexities in real world data analyses in whole exome and whole genome sequencing data. To extend this to real data analyses, common extensions are the inclusion of all chromosomes, including both rare variants located in coding and noncoding regions, and both binary and continuous traits. To extend to all chromosomes, perform rare variant association analysis on all chromosomes using the STAARpipeline, extract burden scores for each chromosome using the code shown above, compile the significant burden scores from all chromosomes together, and perform the identical ensemble regression algorithm above. To extend to noncoding regions, perform a separate gene-centric noncoding rare variant association analysis with STAARpipeline, extract significant burden scores using the same function but changing the region argument, combine significant coding and noncoding burden scores, and perform the identical ensemble regression algorithm. Lastly to extend to binary traits, fit a binary null model with STAARpipeline, perform the respective rare variant association tests, extract the significant burden scores, implement the penalized regression models,and modify the SuperLearner to use binary outcomes. These modifications include using AUC computed in the `RISCA` package instead of $R^2$, using `method = "method.AUC"` in the SuperLearner call, and dropping the ridge regression in `SL.library` as SuperLearner does not support that for binary outcomes. The implementation of this algorithm for binary traits for the UK Biobank whole exome sequencing analysis can be found at https://github.com/jwilliams10/RareVariantPRS/blob/main/WES/Binary/RareVariant_PRS/Single_RareVariant_PRS_All.R.
+
+## SessionInfo
+
+```{r}
+sessionInfo()
+```
+
