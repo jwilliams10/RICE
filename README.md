@@ -1,7 +1,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 # RICE
-This repository contains an R package for creating polygenic risk scores from rare variants using RICE. Specifically, this package creates a polygenic risk score using RICE-RV (as denoted in the manuscript) with significant rare variant sets and their burden scores extracted from an ADGS file. A detailed example of this is provided in the <a href="https://jwilliams10.github.io/RICE_Vignette">vignette</a>. 
+This repository contains an R package for creating polygenic risk scores from rare variants using RICE. Specifically, this package creates a polygenic risk score using RICE-RV (as denoted in the manuscript) with significant rare variant sets and their burden scores extracted from an AGDS file. A detailed example of this is provided in the <a href="https://jwilliams10.github.io/RICE_Vignette">vignette</a>. **Note**, if an individual has burden scores from a source other than an AGDS file, a rare variant PRS following the RICE-RV steps can still be created by starting at the Penalized Regression step in the vignette.
 
 ## RICE Overview
 ![alt text](https://github.com/jwilliams10/RICE/blob/main/docs/RICE_Structure.jpg?raw=true)
@@ -28,7 +28,6 @@ An uncompiled <a href="vignettes/RICE_Vignette.Rmd">vignette</a> and a compiled 
 Please direct any problems or questions to Jacob Williams <jacob.williams@nih.gov>.
 
 ## Citation
-
 If you use **RICE** in your work, please cite:
 
 ...

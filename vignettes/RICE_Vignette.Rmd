@@ -38,6 +38,8 @@ RICE performs risk prediction for complex traits and diseases by incorporating b
 
 This vignette illustrates an example of constructing a rare variant PRS using chromosome 22 of 1000 Genomes data and provides details on the SuperLearner ensemble regression algorithm used in both RICE-RV and RICE-CV. Data included in this vignette is located at https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/Y7AXYA and can be either directly downloaded from this link or using wget.
 
+Note, this vignette shows how to create a rare variant PRS using burden scores extracted from an AGDS file. However, if a user has burden scores from another source, a rare variant PRS can still be constructed following the RICE-RV structure. If this is the case, start at the Penalized Regression section below.
+
 # RICE-RV
 
 RICE-RV performs rare variant association analysis to identify significant rare variant sets using the training dataset with STAARpipeline. With these significant rare variant sets, burden scores are constructed for each set. Then penalized regression models are trained using the burden scores and predicted onto the tuning and validation datasets. Ensemble regression using SuperLearner optimizes the predictions to form a single PRS. Lastly, this PRS is projected onto the validation set to assess the final prediction performance.
