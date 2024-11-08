@@ -30,7 +30,7 @@ Please direct any problems or questions to Jacob Williams <jacob.williams@nih.go
 ## Citation
 If you use **RICE** in your work, please cite:
 
-...
+Jacob Williams*, Tony Chen, Xing Hua, Wendy Wong, Kai Yu, Peter Kraft, Xihao Li*, & Haoyu Zhang*. (2024). **Integrating Common and Rare Variants Improves Polygenic Risk Prediction Across Diverse Populations**. _medRxiv_. DOI: <a href="https://doi.org/10.1101/2024.11.05.24316779">2024.11.05.24316779</a> 
 
 ## License
 This software is licensed under GPLv3.
