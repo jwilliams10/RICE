@@ -30,6 +30,7 @@ library(SCANG)
 library(STAARpipeline)
 library(glmnet)
 library(caret)
+library(RISCA)
 library(RICE)
 ```
 
