@@ -50,7 +50,7 @@ Ensemble_Function_Binary <- function(x,y){
 #' @description Performs ensemble regression of PRSs and continuous or binary response Y. Produces a set of coefficients for the PRSs.
 #'
 #' @param PRSs A data.frame or matrix containing p PRSs and n observations. p must be greater than 1 and n must be equal the number of observations in Y. PRSs and Y must be matched before performing ensemble regression.
-#' @param Y A data.frame, matrix, or vector containing continuous or binary outcome Y. Number of observations must equal the number of observations in PRSs. PRSs and Y must be matched before performing ensemble regression.
+#' @param Y A data.frame, matrix, or vector containing continuous or binary outcome Y. If a data.frame or matrix, first column will be used as response. Number of observations must equal the number of observations in PRSs. PRSs and Y must be matched before performing ensemble regression.
 #' @param family Either continuous or binary depending on outcome Y. Defaults to continuous.
 #' @returns A named list with one item, Coefficients. Coefficients contain coefficients of the PRSs columns to generate the predicted ensemble PRS. Coefficients include the intercept estimate.
 #' @export
@@ -58,7 +58,7 @@ Ensemble_Function <- function(PRSs,Y,family = c("continuous","binary")){
 
   family <- match.arg(family)
 
-  if(!is.matrix(PRSs) | !is.data.frame(PRSs)){
+  if(!is.matrix(PRSs) & !is.data.frame(PRSs)){
     stop("PRSs is not a data.frame or a matrix")
   }
 
@@ -66,7 +66,7 @@ Ensemble_Function <- function(PRSs,Y,family = c("continuous","binary")){
     stop("Number of columns of PRSs must be greater than 1")
   }
 
-  if(!is.matrix(Y) | !is.data.frame(Y) | !is.vector(Y)){
+  if(!is.matrix(Y) & !is.data.frame(Y) & !is.vector(Y)){
     stop("Y is not a data.frame, a matrix, or a vector")
   }
 
