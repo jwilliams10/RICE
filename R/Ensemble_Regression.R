@@ -58,7 +58,7 @@ Ensemble_Function <- function(PRSs,Y,family = c("continuous","binary")){
 
   family <- match.arg(family)
 
-  if(is.matrix(PRSs) | is.data.frame(PRSs)){
+  if(!is.matrix(PRSs) | !is.data.frame(PRSs)){
     stop("PRSs is not a data.frame or a matrix")
   }
 
@@ -66,7 +66,7 @@ Ensemble_Function <- function(PRSs,Y,family = c("continuous","binary")){
     stop("Number of columns of PRSs must be greater than 1")
   }
 
-  if(is.matrix(Y) | is.data.frame(Y) | is.vector(Y)){
+  if(!is.matrix(Y) | !is.data.frame(Y) | !is.vector(Y)){
     stop("Y is not a data.frame, a matrix, or a vector")
   }
 
