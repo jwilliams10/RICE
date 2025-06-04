@@ -2,8 +2,8 @@ Ensemble_Function_Continuous <- function(x,y){
   x <- as.matrix(x[!is.na(y),])
   y <- y[!is.na(y)]
 
-  lasso_train <- glmnet(x,y,family = "gaussian",alpha = 1)
-  ridge_train <- glmnet(x,y,family = "gaussian",alpha = 0)
+  lasso_train <- glmnet::glmnet(x,y,family = "gaussian",alpha = 1)
+  ridge_train <- glmnet::glmnet(x,y,family = "gaussian",alpha = 0)
 
   lasso_prs_tune <- predict(lasso_train,x)
   ridge_prs_tune <- predict(ridge_train,x)
@@ -23,8 +23,8 @@ Ensemble_Function_Binary <- function(x,y){
   x <- as.matrix(x[!is.na(y),])
   y <- y[!is.na(y)]
 
-  lasso_train <- glmnet(x,y,family = "binomial",alpha = 1)
-  ridge_train <- glmnet(x,y,family = "binomial",alpha = 0)
+  lasso_train <- glmnet::glmnet(x,y,family = "binomial",alpha = 1)
+  ridge_train <- glmnet::glmnet(x,y,family = "binomial",alpha = 0)
 
   lasso_prs_tune <- predict(lasso_train,x)
   ridge_prs_tune <- predict(ridge_train,x)
@@ -34,7 +34,7 @@ Ensemble_Function_Binary <- function(x,y){
   AUC_Vector <- vector()
   for(i in 1:ncol(all)){
     tmp <- data.frame(y = y, x_try = all[,i])
-    roc_obj <- roc.binary(status = "y",
+    roc_obj <- RISCA::roc.binary(status = "y",
                           variable = "x_try",
                           confounders = "~1",
                           data = tmp,

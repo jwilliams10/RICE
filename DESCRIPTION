@@ -1,12 +1,12 @@
 Package: RICE
 Type: Package
-Title: Integrating Common and Rare Variants Improves Polygenic Risk Prediction Across Diverse Populations
+Title: Polygenic Risk Prediction Integrating Common and Rare Variants
 Version: 0.1.0
 Author: Jacob Williams [aut, cre]
 Maintainer: Jacob Williams <jacob.williams@nih.gov>
-Description: Creates a rare variant polygenic risk score using burden scores extracted from a ADGS file. Burden scores are extracted for specific rare variant sets using the Burden_Score function. A rare variant PRS is constructed using the RareVariantPRS function.
+Description: Creates a rare variant polygenic risk score using burden scores extracted from a ADGS file. Burden scores are extracted for specific rare variant sets using the Burden_Score function. A rare variant PRS is constructed using the Ensemble_Function function.
 License: GPL-3
-Imports: Rcpp, SCANG, dplyr, SeqArray, SeqVarTools, GenomicFeatures, TxDb.Hsapiens.UCSC.hg38.knownGene, GMMAT, GENESIS, Matrix, methods, caret, glmnet, SuperLearner, STAAR, STAARpipeline
+Imports: Rcpp, SCANG, dplyr, SeqArray, SeqVarTools, GenomicFeatures, TxDb.Hsapiens.UCSC.hg38.knownGene, GMMAT, GENESIS, Matrix, methods, caret, glmnet, RISCA, STAAR, STAARpipeline
 Encoding: UTF-8
 LazyData: true
 Depends: R (>= 4.0.0)
