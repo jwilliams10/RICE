@@ -222,99 +222,24 @@ all_valid <- cbind(lasso_valid,ridge_valid)
 colnames(all_valid) <- c(paste0("lasso",1:ncol(lasso_valid)),paste0("ridge",1:ncol(ridge_valid)))
 ```
 
-## SuperLearner
+## Ensemble Regression
 
 The sixth and last step of RICE-RV, trains an ensemble regression algorithm on the predicted penalized regression outcomes with the tuning dataset. The ensemble regression algorithm includes both Lasso and ridge regression as base learners. 
 
 ```{r,warning=FALSE,message=FALSE}
-## SuperLearner
-### Build a null model using control covariates to train the SuperLearner
+## Ensemble Regression
+### Build a null model using control covariates to train the Ensembler Regression Algorithm
 tune_null_model <- lm(Y~1,data = Phenotype_Data[Phenotype_Data$IDs %in% tune_set,])
 y_tune <- tune_null_model$residuals
 
-### Compute the R2 of the penalized regression inputs
-best_r2 <- vector()
-count <- 1
-for(j in colnames(all_tune)){
-  tmp <- data.frame(y = y_tune,x = all_tune[,j])
-  best_r2[count] <- summary(lm(y~x,data = tmp))$r.squared
-  count <- count + 1
-}
-
-### Store the best
-best_singleprs <- colnames(all_tune)[which.max(best_r2)]
-r2_best_singleprs_tune <- best_r2[which.max(best_r2)]
-
-### Clean the projections
-mtx <- cor(all_tune)
-drop <- names(as.data.frame(all_tune))[apply(mtx,2,function(x){sum(is.na(x))}) == (nrow(mtx) - 1)]
-  
-all_tune <- all_tune[,!(colnames(all_tune) %in% drop)]
-all_valid <- all_valid[,!(colnames(all_valid) %in% drop)]
-
-drop <- findLinearCombos(all_tune)$remove
-drop <- names(as.data.frame(all_tune))[drop]
-
-all_tune <- all_tune[,!(colnames(all_tune) %in% drop)]
-all_valid <- all_valid[,!(colnames(all_valid) %in% drop)]
-
-mtx <- cor(all_tune)
-drop <- findCorrelation(mtx,cutoff=0.98)
-drop <- names(as.data.frame(all_tune))[drop]
-  
-all_tune <- all_tune[,!(colnames(all_tune) %in% drop)]
-all_valid <- all_valid[,!(colnames(all_valid) %in% drop)]
-
-### SuperLearner in RICE is an ensemble of Lasso and ridge regression models as we want to maintain linearity
-SL.library <- c("SL.glmnet","SL.ridge")
-  
-full_superlearner <- SuperLearner(Y = y_tune, X = as.data.frame(all_tune), family = gaussian(),
-                                    SL.library = SL.library,cvControl = list(V = 20))
-### Perform cross validation of SuperLearner on the tuning dataset to see whether Lasso, Ridge, or SuperLearner performs best 
-cvsl <- CV.SuperLearner(Y = y_tune, X = as.data.frame(all_tune), family = gaussian(),
-                          SL.library = SL.library,cvControl = list(V = 20))
-
-best_algorithm <- summary(cvsl)$Table$Algorithm[which.min(summary(cvsl)$Table$Ave)]
-  
-### Predict all outcomes
-RareVariantPRS_Tune <- predict(full_superlearner, as.data.frame(all_tune), onlySL = FALSE)
-RareVariantPRS_Valid <- predict(full_superlearner, all_valid, onlySL = FALSE)
-
-prs_best_tune_sl <- RareVariantPRS_Tune$pred
-prs_best_tune_glmnet <- RareVariantPRS_Tune$library.predict[,1]
-prs_best_tune_ridge <- RareVariantPRS_Tune$library.predict[,2]
-
-prs_best_valid_sl <- RareVariantPRS_Valid$pred
-prs_best_valid_glmnet <- RareVariantPRS_Valid$library.predict[,1]
-prs_best_valid_ridge <- RareVariantPRS_Valid$library.predict[,2]
-
-### Choose best prediction from ensemble regression
-if(best_algorithm == "SL.glmnet_All"){
-    prs_best_tune <- prs_best_tune_glmnet
-    prs_best_valid <- prs_best_valid_glmnet
-}else if(best_algorithm == "SL.ridge_All"){
-    prs_best_tune <- prs_best_tune_ridge
-    prs_best_valid <- prs_best_valid_ridge
-}else {
-    prs_best_tune <- prs_best_tune_sl
-    prs_best_valid <- prs_best_valid_sl
-}
-
-### Compute the R2 of the best ensemble regression prediction
-r2_sl_tune <- summary(lm(y~x,data = data.frame(y = y_tune,x = prs_best_tune)))$r.squared
-
-### Compare to the best individual input R2, keep the best
-if(r2_sl_tune < r2_best_singleprs_tune){
-  prs_best_tune <- all_tune[,best_thresh]
-  prs_best_valid <- all_valid[,best_thresh]
-}
+Results <- Ensemble_Function(PRSs = all_tune,Y = y_tune,family = "continuous")
+## Set coefficients of rank deficient columns to 0
+Results$Coefficients[is.na(Results$Coefficients)] <- 0
 
 ### Save final PRS for tuning and validation sets
-BestRareVariantPRS_Tune <- data.frame(IDs = tune_set,PRS = prs_best_tune)
-BestRareVariantPRS_Valid <- data.frame(IDs = validation_set,PRS = prs_best_valid)
+BestRareVariantPRS_Tune <- data.frame(IDs = tune_set,PRS = as.matrix(all_tune[,names(Results$Coefficients)[-1]]) %*% matrix(Results$Coefficients[-1],ncol = 1))
+BestRareVariantPRS_Valid <- data.frame(IDs = validation_set,PRS = as.matrix(all_valid[,names(Results$Coefficients)[-1]]) %*% matrix(Results$Coefficients[-1],ncol = 1))
 ```
-
-This ensemble regression algorithm is the exact same one used in RICE-CV but the input is instead all of the PRSs from existing methods.
 
 ## Evaluation
 
@@ -325,10 +250,10 @@ valid_null_model <- lm(Y~1,data = Phenotype_Data[Phenotype_Data$IDs %in% validat
 y_valid <- valid_null_model$residuals
 
 ### R2 of RICE-RV on Validation Data
-summary(lm(y~x,data = data.frame(y= y_valid,x = prs_best_valid)))$r.squared
+summary(lm(y~x,data = data.frame(y = y_valid,x = BestRareVariantPRS_Valid$PRS)))$r.squared
 
 ### Beta of PRS per SD of RICE-RV on Validation Data
-coef(lm(y~x - 1,data = data.frame(y=scale(y_valid),x = scale(prs_best_valid))))
+coef(lm(y~x - 1,data = data.frame(y = scale(y_valid),x = scale(BestRareVariantPRS_Valid$PRS))))
 ```
 
 ## Extract Final Coefficients of Rare Variant Sets
@@ -337,7 +262,7 @@ Commonly, there is curiosity in knowing the relationship between the variants an
 
 ```{r}
 ## Estimate Final Coefficients
-Linear_Projection <- data.frame(y = prs_best_tune,X_tune)
+Linear_Projection <- data.frame(y = BestRareVariantPRS_Tune$PRS,X_tune)
 ### The tuning PRS is a perfect linear projection of the significant burden scores
 summary(lm(y~.,data =Linear_Projection))$r.squared
 ### Extract the coefficients
@@ -347,7 +272,7 @@ head(coding_sig)
 
 ## Extensions
 
-Here we presented how to construct a rare variant PRS using rare variants located in coding region of chromosome 22. This example is almost identical to the simulation study in our manuscript but is far from the complexities in real world data analyses in whole exome and whole genome sequencing data. To extend this to real data analyses, common extensions are the inclusion of all chromosomes, including both rare variants located in coding and noncoding regions, and both binary and continuous traits. To extend to all chromosomes, perform rare variant association analysis on all chromosomes using the STAARpipeline, extract burden scores for each chromosome using the code shown above, compile the significant burden scores from all chromosomes together, and perform the identical ensemble regression algorithm above. To extend to noncoding regions, perform a separate gene-centric noncoding rare variant association analysis with STAARpipeline, extract significant burden scores using the same function but changing the region argument, combine significant coding and noncoding burden scores, and perform the identical ensemble regression algorithm. Lastly to extend to binary traits, fit a binary null model with STAARpipeline, perform the respective rare variant association tests, extract the significant burden scores, implement the penalized regression models,and modify the SuperLearner to use binary outcomes. These modifications include using AUC computed in the `RISCA` package instead of $R^2$, using `method = "method.AUC"` in the SuperLearner call, and dropping the ridge regression in `SL.library` as SuperLearner does not support that for binary outcomes. The implementation of this algorithm for binary traits for the UK Biobank whole exome sequencing analysis can be found at https://github.com/jwilliams10/RareVariantPRS/blob/main/WES/Binary/RareVariant_PRS/Single_RareVariant_PRS_All.R.
+Here we presented how to construct a rare variant PRS using rare variants located in coding region of chromosome 22. This example is almost identical to the simulation study in our manuscript but is far from the complexities in real world data analyses in whole exome and whole genome sequencing data. To extend this to real data analyses, common extensions are the inclusion of all chromosomes, including both rare variants located in coding and noncoding regions, and both binary and continuous traits. To extend to all chromosomes, perform rare variant association analysis on all chromosomes using the STAARpipeline, extract burden scores for each chromosome using the code shown above, compile the significant burden scores from all chromosomes together, and perform the identical ensemble regression algorithm above. To extend to noncoding regions, perform a separate gene-centric noncoding rare variant association analysis with STAARpipeline, extract significant burden scores using the same function but changing the region argument, combine significant coding and noncoding burden scores, and perform the identical ensemble regression algorithm. Lastly to extend to binary traits, fit a binary null model with STAARpipeline, perform the respective rare variant association tests, extract the significant burden scores, implement the penalized regression models,and set `family = "binary"` in the `Ensemble_Function`. The implementation of this algorithm for binary traits for the UK Biobank whole exome sequencing analysis can be found at https://github.com/jwilliams10/RareVariantPRS/blob/main/WES/Binary/RareVariant_PRS/Single_RareVariant_PRS_All.R.
 
 ## SessionInfo
 
