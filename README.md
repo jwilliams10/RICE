@@ -19,10 +19,12 @@ library(devtools)
 devtools::install_github("jwilliams10/RICE")
 ```
 
+Installs in approximately 10 seconds on a Macbook Pro M1 if prerequisites are already installed.
+
 ## Usage
 Please see the <a href="docs/RICE_0.1.0.pdf">**RICE** user manual</a> for detailed usage of RICE package.
 
-An uncompiled <a href="vignettes/RICE_Vignette.Rmd">vignette</a> and a compiled <a href="https://jwilliams10.github.io/RICE_Vignette">vignette</a> is available that showcases how to create a rare variant PRS with part of chromosome 22 for 1000 Genome data. Data for the example in the vignette is downloadable through <a href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/Y7AXYA">Harvard Dataverse</a>.
+An uncompiled <a href="vignettes/RICE_Vignette.Rmd">vignette</a> and a compiled <a href="https://jwilliams10.github.io/RICE_Vignette">vignette</a> is available that showcases how to create a rare variant PRS with part of chromosome 22 for 1000 Genome data. Data for the example in the vignette is downloadable through <a href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/Y7AXYA">Harvard Dataverse</a>. The vignette takes approximately 70 seconds to compile on a Macbook Pro M1.
 
 ## Support
 Please direct any problems or questions to Jacob Williams <jacob.williams@nih.gov>.
